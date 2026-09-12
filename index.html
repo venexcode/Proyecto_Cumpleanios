@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Muro de Felicitaciones</title>
+    <!-- Fuentes Tipográficas -->
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- <link rel="stylesheet" href="css/style.css"> -->
+    <link rel="stylesheet" href="css/minimalism.css">
+    <!-- Script de Confeti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+</head>
+<body>
+
+    <!-- BANNER DE ENCABEZADO -->
+    <header class="hero-header">
+        <span class="pill-badge">✨ Día Especial ✨</span>
+        <h1>¡Muro de Felicitaciones! 🎉</h1>
+        <p>Déjale un mensaje especial, una foto entrañable, grábale un audio o sube un video directo desde tu dispositivo.</p>
+        <button class="btn-confetti" onclick="fireConfetti()">🎉 ¡Lanzar Confeti!</button>
+    </header>
+
+    <main class="container">
+
+        <!-- FORMULARIO DE ENVÍO -->
+        <section class="form-card">
+            <div class="form-title">
+                <span>✍️</span> Enviar tus Deseos
+            </div>
+            <p class="form-subtitle">Elige qué tipo de recuerdo quieres regalar hoy</p>
+
+            <form id="wishesForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Tu Nombre o Apodo *</label>
+                        <input type="text" id="senderName" class="form-control" placeholder="Ej. Tía María, Santi, Carlos..." required>
+                    </div>
+                    <div class="form-group">
+                        <label>Tu Relación / Parentesco</label>
+                        <select id="relationship" class="form-control">
+                            <option value="Amigo/a 🤝">Amigo/a 🤝</option>
+                            <option value="Familiar 💛">Familiar 💛</option>
+                            <option value="Compañero/a 💼">Compañero/a 💼</option>
+                            <option value="Otro ✨">Otro ✨</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- SELECCIÓN DE MEDIA -->
+                <div class="media-tabs">
+                    <button type="button" class="tab-btn active" onclick="switchTab('texto')">📝 Texto</button>
+                    <button type="button" class="tab-btn" onclick="switchTab('foto')">🖼️ Foto</button>
+                    <button type="button" class="tab-btn" onclick="switchTab('audio')">🎙️ Audio</button>
+                    <button type="button" class="tab-btn" onclick="switchTab('video')">📹 Video</button>
+                </div>
+
+                <!-- CONTENIDO SEGÚN LA PESTAÑA -->
+                <div id="tab-texto" class="tab-content active">
+                    <div class="form-group">
+                        <label>Mensaje de Felicitación *</label>
+                        <textarea id="messageText" class="form-control" rows="4" placeholder="¡Escribe tus mejores deseos aquí! Te queremos mucho..."></textarea>
+                    </div>
+                </div>
+
+                <div id="tab-foto" class="tab-content">
+                    <div class="form-group">
+                        <label>Seleccionar Fotografía</label>
+                        <input type="file" id="photoInput" class="form-control" accept="image/*">
+                    </div>
+                </div>
+
+                <div id="tab-audio" class="tab-content">
+                    <div class="audio-option-tabs">
+                        <button type="button" class="audio-opt-btn active" id="btnOptMic" onclick="toggleAudioSubTab('mic')">🎙️ Grabar Voz</button>
+                        <button type="button" class="audio-opt-btn" id="btnOptFile" onclick="toggleAudioSubTab('file')">📁 Subir Archivo</button>
+                    </div>
+
+                    <!-- Módulo Grabar Voz Directamente -->
+                    <div id="subtab-mic" class="audio-recorder-box">
+                        <div class="rec-status" id="recStatusText">Haz clic para empezar a grabar tu mensaje</div>
+                        <div class="rec-timer" id="recTimer">00:00</div>
+                        <button type="button" class="btn-mic" id="btnMic" onclick="toggleRecording()">
+                            <span>🎙️</span> <span id="btnMicText">Iniciar Grabación</span>
+                        </button>
+                        <audio id="audioPreview" controls style="display: none; width: 100%; margin-top: 15px;"></audio>
+                    </div>
+
+                    <!-- Módulo Subir Archivo de Audio -->
+                    <div id="subtab-file" style="display: none;">
+                        <div class="form-group">
+                            <label>Seleccionar Archivo de Audio (.mp3, .m4a, .wav)</label>
+                            <input type="file" id="audioFileInput" class="form-control" accept="audio/*">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-video" class="tab-content">
+                    <div class="form-group">
+                        <label>Seleccionar Archivo de Video</label>
+                        <input type="file" id="videoInput" class="form-control" accept="video/*">
+                    </div>
+                </div>
+
+                <!-- SELECCIÓN DE COLOR DE TARJETA -->
+                <div class="color-picker">
+                    <label>Color de Tarjeta:</label>
+                    <div class="color-opt c-celeste active" onclick="selectColor('#E8F1F9', this)"></div>
+                    <div class="color-opt c-marfil" onclick="selectColor('#FDFBF7', this)"></div>
+                    <div class="color-opt c-gris" onclick="selectColor('#F0F3F7', this)"></div>
+                    <div class="color-opt c-dorado" onclick="selectColor('#FAF4E5', this)"></div>
+                </div>
+
+                <button type="submit" class="btn-submit">🚀 Publicar Felicitación</button>
+            </form>
+        </section>
+
+        <!-- GALERÍA / MURO -->
+        <section>
+            <div class="gallery-header">
+                <div class="gallery-title">
+                    <h2>Galería de Deseos ✨</h2>
+                    <p>Explora todos los mensajes dedicados al cumpleañero</p>
+                </div>
+                <div class="filters">
+                    <button class="filter-btn active">Todos</button>
+                    <button class="filter-btn">Videos</button>
+                    <button class="filter-btn">Fotos</button>
+                    <button class="filter-btn">Audios</button>
+                    <button class="filter-btn">Texto</button>
+                </div>
+            </div>
+
+            <div class="masonry-grid" id="wallGrid">
+                <!-- Tarjeta 1 (Texto) -->
+                <div class="card-post" style="background-color: #FAF4E5;">
+                    <div>
+                        <div class="post-header">
+                            <div class="post-author">
+                                <h4>Mamá ❤️</h4>
+                                <span>Familiar</span>
+                            </div>
+                            <span class="post-time">Hace 2 horas</span>
+                        </div>
+                        <p class="post-content">¡Feliz cumpleaños, mi vida! Que este nuevo año esté lleno de salud, amor y mucha felicidad. Te amo con todo mi corazón. 🎂🎉</p>
+                    </div>
+                    <div class="post-actions">
+                        <button class="react-btn">❤️ 12</button>
+                        <button class="react-btn">👏 8</button>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 2 (Foto) -->
+                <div class="card-post" style="background-color: #E8F1F9;">
+                    <div>
+                        <div class="post-header">
+                            <div class="post-author">
+                                <h4>Lucas & Sofía</h4>
+                                <span>Amigo/a</span>
+                            </div>
+                            <span class="post-time">Hace 4 horas</span>
+                        </div>
+                        <p class="post-content">¡Feliz cumple hermano! Qué gran recuerdo de las últimas vacaciones. ¡Por más viajes juntos!</p>
+                        <div class="post-media">
+                            <img src="https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=600&q=80" alt="Foto">
+                        </div>
+                    </div>
+                    <div class="post-actions">
+                        <button class="react-btn">❤️ 15</button>
+                        <button class="react-btn">👏 10</button>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 3 (Audio) -->
+                <div class="card-post" style="background-color: #FDFBF7;">
+                    <div>
+                        <div class="post-header">
+                            <div class="post-author">
+                                <h4>Tío Roberto</h4>
+                                <span>Familiar</span>
+                            </div>
+                            <span class="post-time">Hace 5 horas</span>
+                        </div>
+                        <p class="post-content">Te dejé un saludo cantado especial para hoy. ¡Escúchalo con atención!</p>
+                        <audio controls style="width: 100%; margin-top: 8px; margin-bottom: 12px;">
+                            <source src="" type="audio/mpeg">
+                        </audio>
+                    </div>
+                    <div class="post-actions">
+                        <button class="react-btn">❤️ 9</button>
+                        <button class="react-btn">👏 14</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="js/script.js">
+    </script>
+</body>
+</html>
