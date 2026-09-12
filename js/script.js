@@ -19,7 +19,7 @@ let isRecording = false;
 let recInterval;
 let recSeconds = 0;
 
-function switchTab(tab) {
+function switchTab(tab, evt) {
   activeTab = tab;
   document
     .querySelectorAll(".tab-btn")
@@ -28,8 +28,11 @@ function switchTab(tab) {
     .querySelectorAll(".tab-content")
     .forEach((content) => content.classList.remove("active"));
 
-  if (event && event.currentTarget) {
-    event.currentTarget.classList.add("active");
+  // CORREGIDO: ahora recibe el evento como parámetro explícito (evt) en vez de
+  // depender de la variable global "event", que no existe en todos los navegadores
+  // ni en modo estricto ("use strict").
+  if (evt && evt.currentTarget) {
+    evt.currentTarget.classList.add("active");
   }
   const tabEl = document.getElementById("tab-" + tab);
   if (tabEl) tabEl.classList.add("active");
@@ -121,7 +124,64 @@ function fireConfetti() {
 // Lanzar confeti en toda la pantalla al cargar o recargar la página
 window.addEventListener("load", () => {
   lanzarConfettiPantallaCompleta();
+  cargarPublicacionesGuardadas();
 });
+
+// -------------------------------------------------------------
+// NUEVO: cargar las publicaciones ya guardadas en Google Sheets
+// al abrir la página, para que no se "borren" al recargar.
+// -------------------------------------------------------------
+async function cargarPublicacionesGuardadas() {
+  try {
+    const respuesta = await fetch(SCRIPT_URL);
+    const datos = await respuesta.json();
+
+    if (datos.result !== "success" || !datos.posts) return;
+
+    const wallGrid = document.getElementById("wallGrid");
+
+    datos.posts.forEach((post) => {
+      const card = document.createElement("div");
+      card.className = "card-post";
+
+      const tieneImagen =
+        post.imagenUrl && post.imagenUrl !== "Sin imagen";
+
+      card.innerHTML = `
+        <div>
+            <div class="post-header">
+                <div class="post-author">
+                    <h4>${escapeHTML(post.autor || "Anónimo")}</h4>
+                </div>
+                <span class="post-time">${formatearFecha(post.fecha)}</span>
+            </div>
+            <p class="post-content">${escapeHTML(post.mensaje || "")}</p>
+            ${tieneImagen ? `<div class="post-media"><img src="${post.imagenUrl}" alt="Nota guardada"></div>` : ""}
+        </div>
+        <div class="post-actions">
+            <button class="react-btn">❤️ 0</button>
+            <button class="react-btn">👏 0</button>
+        </div>
+      `;
+
+      wallGrid.appendChild(card);
+    });
+  } catch (err) {
+    console.error("No se pudieron cargar las publicaciones guardadas:", err);
+  }
+}
+
+function formatearFecha(fechaStr) {
+  if (!fechaStr) return "";
+  const fecha = new Date(fechaStr);
+  if (isNaN(fecha)) return "";
+  return fecha.toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function lanzarConfettiPantallaCompleta() {
   if (typeof confetti !== "function") return;
@@ -308,4 +368,87 @@ function escapeHTML(str) {
         '"': "&quot;",
       }[tag] || tag)
   );
+}
+
+// -------------------------------------------------------------
+// LÓGICA DEL PANEL DE ADMINISTRACIÓN
+// -------------------------------------------------------------
+let windowAdminPin = "";
+
+function abrirModalAdmin() {
+  document.getElementById("adminModal").style.display = "flex";
+}
+
+function cerrarModalAdmin() {
+  document.getElementById("adminModal").style.display = "none";
+  document.getElementById("adminPinInput").value = "";
+}
+
+function activarModoAdmin() {
+  const pin = document.getElementById("adminPinInput").value;
+  if (!pin) {
+    alert("Por favor ingresa un PIN");
+    return;
+  }
+
+  windowAdminPin = pin;
+
+  // Activar y mostrar el botón de borrado de administrador en todas las tarjetas
+  const cards = document.querySelectorAll(".card-post");
+  cards.forEach((card) => {
+    let btnDel = card.querySelector(".btn-admin-delete");
+    if (!btnDel) {
+      btnDel = document.createElement("button");
+      btnDel.className = "btn-delete btn-admin-delete";
+      btnDel.style.backgroundColor = "#dc3545";
+      btnDel.style.color = "#ffffff";
+      btnDel.style.marginLeft = "8px";
+      btnDel.innerHTML = "🗑️ Borrar (Admin)";
+      btnDel.onclick = () => eliminarComoAdmin(card);
+      
+      const header = card.querySelector(".post-header");
+      if (header) header.appendChild(btnDel);
+    }
+    btnDel.style.display = "inline-block";
+  });
+
+  alert("🔓 Modo Administrador activado. Puedes borrar cualquier tarjeta del muro.");
+  cerrarModalAdmin();
+}
+
+async function eliminarComoAdmin(cardElement) {
+  if (!confirm("¿Seguro que deseas eliminar esta publicación permanentemente de la web, Sheets y Google Drive?")) {
+    return;
+  }
+
+  const mensajeText = cardElement.querySelector(".post-content") ? cardElement.querySelector(".post-content").innerText : "";
+  const imageUrl = cardElement.getAttribute("data-drive-url") || "";
+
+  // Ocultar la tarjeta visualmente de inmediato
+  cardElement.style.opacity = "0.3";
+
+  try {
+    fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "delete",
+        pin: windowAdminPin,
+        mensaje: mensajeText,
+        imageUrl: imageUrl
+      })
+    });
+
+    // Eliminar la tarjeta del navegador
+    setTimeout(() => {
+      cardElement.remove();
+      alert("✅ Publicación eliminada con éxito.");
+    }, 500);
+
+  } catch (err) {
+    console.error("Error al borrar:", err);
+    cardElement.style.opacity = "1";
+    alert("Hubo un problema al intentar eliminar la nota.");
+  }
 }
