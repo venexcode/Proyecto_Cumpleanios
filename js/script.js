@@ -1,5 +1,5 @@
 // 1. URL de tu despliegue de Google Apps Script
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyFQ8ogtsM54bEVDJz9lUcxqWekdahNk_CekhqXquqRhg5I_yulfSe1OMskKJQoWo-B/exec";
+const SCRIPT_URL = "https://script.google.com/macros/library/d/11jUTus-dbUgnZvMsehbiuGhJAcmD4QdtTX8J4ya1qEr_YUsAe0NBSOUh/8ñ";
 
 // Obtener o asignar un ID único de usuario para este navegador/dispositivo
 let userId = localStorage.getItem("user_device_id");
@@ -370,7 +370,7 @@ function escapeHTML(str) {
   );
 }
 
-// -------------------------------------------------------------
+/* // -------------------------------------------------------------
 // LÓGICA DEL PANEL DE ADMINISTRACIÓN
 // -------------------------------------------------------------
 let windowAdminPin = "";
@@ -451,4 +451,4 @@ async function eliminarComoAdmin(cardElement) {
     cardElement.style.opacity = "1";
     alert("Hubo un problema al intentar eliminar la nota.");
   }
-}
+} */
