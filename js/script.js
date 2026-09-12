@@ -1,5 +1,5 @@
 // 1. URL de tu despliegue de Google Apps Script
-const SCRIPT_URL = "https://script.google.com/macros/library/d/11jUTus-dbUgnZvMsehbiuGhJAcmD4QdtTX8J4ya1qEr_YUsAe0NBSOUh/9";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwoiC2vropMCe7jmKPfbPv4e8lQmx4gy2ChYPjkIBIws2ddmFk1hai9b0BnkdGZWrxq/exec";
 
 // Obtener o asignar un ID único de usuario para este navegador/dispositivo
 let userId = localStorage.getItem("user_device_id");
