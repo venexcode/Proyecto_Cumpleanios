@@ -1,0 +1,284 @@
+// ID de la carpeta principal en tu Google Drive (ver Paso 1 de las instrucciones)
+const CARPETA_PRINCIPAL_ID = "19p5AMybCHUqaDIqGVDBhkvQ9GTIjiJPl";
+
+// Nombre de la hoja donde se registran las publicaciones
+const NOMBRE_HOJA = "Posts";
+
+// Límites de tamaño en bytes, para que un archivo gigante no rompa el sistema
+const LIMITE_TARJETA = 5 * 1024 * 1024;   // 5 MB  -> tarjetas de texto/foto
+const LIMITE_VIDEO   = 25 * 1024 * 1024;  // 25 MB -> videos (límite real de Apps Script)
+const LIMITE_AUDIO   = 10 * 1024 * 1024;  // 10 MB -> audios
+
+// Palabras que bloquean automáticamente una publicación.
+// Agregá o quitá palabras según necesites (todo en minúsculas).
+const PALABRAS_PROHIBIDAS = [
+  "idiota", "estupido", "estúpido", "puto", "puta"
+];
+
+
+// ============ PUNTO DE ENTRADA: recibir una publicación nueva ============
+function doPost(e) {
+  try {
+    Logger.log("doPost recibido. Largo del body: " + (e.postData ? e.postData.contents.length : "SIN postData"));
+
+    const datos = JSON.parse(e.postData.contents);
+
+    const autor = (datos.autor || "").trim();
+    const mensaje = (datos.mensaje || "").trim();
+    const tipo = datos.tipo; // "tarjeta" | "video" | "audio"
+    const color = (datos.color || "#E8F1F9").trim();
+
+    Logger.log("tipo=" + tipo + " autor=" + autor + " color=" + color + " largoBase64=" + (datos.archivoBase64 ? datos.archivoBase64.length : 0));
+
+    // 1. Validaciones básicas
+    if (!autor) {
+      Logger.log("RECHAZADO: falta autor");
+      return respuesta({ result: "error", motivo: "Falta el nombre del autor" });
+    }
+    if (!tipo) {
+      Logger.log("RECHAZADO: falta tipo");
+      return respuesta({ result: "error", motivo: "Falta el tipo de publicación" });
+    }
+
+    const tieneArchivo = !!datos.archivoBase64;
+
+    // "video" y "audio" siempre necesitan un archivo adjunto.
+    // "tarjeta" puede ser solo texto, solo foto, o ambos.
+    if ((tipo === "video" || tipo === "audio") && !tieneArchivo) {
+      Logger.log("RECHAZADO: falta el archivo para tipo " + tipo);
+      return respuesta({ result: "error", motivo: "Falta el contenido a publicar" });
+    }
+    if (tipo === "tarjeta" && !mensaje && !tieneArchivo) {
+      Logger.log("RECHAZADO: tarjeta sin texto ni foto");
+      return respuesta({ result: "error", motivo: "Falta el contenido a publicar" });
+    }
+
+    // 2. Filtro de lenguaje prohibido en el mensaje de texto
+    if (contieneLenguajeProhibido(mensaje)) {
+      Logger.log("RECHAZADO: lenguaje prohibido");
+      return respuesta({ result: "rechazado", motivo: "El mensaje contiene lenguaje no permitido" });
+    }
+
+    let driveFileId = "";
+    let driveUrl = "";
+
+    if (tieneArchivo) {
+      // 3. Validar el tamaño ANTES de decodificar (más rápido y seguro)
+      const bytesEstimados = Math.floor(datos.archivoBase64.length * 0.75);
+      const limite = tipo === "video" ? LIMITE_VIDEO
+                   : tipo === "audio" ? LIMITE_AUDIO
+                   : LIMITE_TARJETA;
+
+      if (bytesEstimados > limite) {
+        Logger.log("RECHAZADO: archivo demasiado grande (" + bytesEstimados + " bytes)");
+        return respuesta({
+          result: "error",
+          motivo: "El archivo supera el tamaño máximo permitido (" + Math.round(limite / 1024 / 1024) + " MB)"
+        });
+      }
+
+      // 4. Guardar el archivo real en la carpeta de Drive correspondiente
+      Logger.log("Intentando guardar en carpeta ID: " + CARPETA_PRINCIPAL_ID);
+      const archivoGuardado = guardarArchivoEnDrive(datos, tipo);
+      Logger.log("Archivo guardado con éxito. ID: " + archivoGuardado.getId());
+      driveFileId = archivoGuardado.getId();
+      driveUrl = archivoGuardado.getUrl();
+    }
+
+    // 4b. Guardar la captura "estilo Canva" de la tarjeta completa (texto +
+    // foto + color), SOLO como respaldo/diseño en Drive. Este archivo nunca
+    // se manda de vuelta al cliente ni se usa para pintar la web: la web
+    // siempre arma la tarjeta con texto real + la foto real (arriba).
+    let disenioFileId = "";
+    let disenioUrl = "";
+    if (datos.disenioBase64) {
+      try {
+        const disenioGuardado = guardarDisenioEnDrive(datos);
+        disenioFileId = disenioGuardado.getId();
+        disenioUrl = disenioGuardado.getUrl();
+        Logger.log("Diseño (estilo Canva) guardado como respaldo. ID: " + disenioFileId);
+      } catch (err) {
+        // Si falla el respaldo del diseño, no bloqueamos la publicación real
+        Logger.log("No se pudo guardar el diseño de respaldo: " + err.message);
+      }
+    }
+
+    // 5. Registrar la fila en la hoja, con estado "pendiente" por defecto
+    const filaNumero = registrarEnHoja({
+      autor: autor,
+      relacion: datos.relacion || "",
+      mensaje: mensaje,
+      tipo: tipo,
+      color: color,
+      driveFileId: driveFileId,
+      driveUrl: driveUrl,
+      disenioFileId: disenioFileId,
+      disenioUrl: disenioUrl
+    });
+    Logger.log("Fila registrada en la hoja: #" + filaNumero);
+
+    return respuesta({ result: "success", id: filaNumero, estado: "pendiente" });
+
+  } catch (err) {
+    Logger.log("ERROR ATRAPADO en doPost: " + err.message);
+    Logger.log(err.stack);
+    return respuesta({ result: "error", motivo: "Error interno: " + err.message });
+  }
+}
+
+function doGet(e) {
+  const hoja = obtenerHoja();
+  const filas = hoja.getDataRange().getValues();
+  const encabezados = filas.shift();
+
+  const posts = filas
+    .map(function (fila) { return objetoDesdeFila(encabezados, fila); })
+    .filter(function (post) { return post.estado === "aprobado"; })
+    .map(datosSegurosParaElCliente)
+    .reverse(); // los más recientes primero
+
+  const payload = { result: "success", posts: posts };
+  const callback = e && e.parameter && e.parameter.callback;
+
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + "(" + JSON.stringify(payload) + ");")
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
+  return respuesta(payload);
+}
+
+
+function datosSegurosParaElCliente(post) {
+  const publico = {
+    autor: post.autor,
+    relacion: post.relacion,
+    mensaje: post.mensaje,
+    tipo: post.tipo,
+    fecha: post.fecha,
+    color: post.color || "#E8F1F9"
+  };
+
+  // Si la publicación tiene un archivo asociado en Drive (foto, video o
+  // audio), se incrusta como data URI. Antes esto solo pasaba para
+  // video/audio y las fotos de las tarjetas se quedaban sin imagen.
+  if (post.driveFileId) {
+    try {
+      const archivo = DriveApp.getFileById(post.driveFileId);
+      const blob = archivo.getBlob();
+      const base64 = Utilities.base64Encode(blob.getBytes());
+      publico.mediaBase64 = "data:" + blob.getContentType() + ";base64," + base64;
+    } catch (err) {
+      Logger.log("No se pudo incrustar el archivo " + post.driveFileId + ": " + err.message);
+      publico.mediaBase64 = null;
+    }
+  }
+
+  return publico;
+}
+
+
+// ============ FUNCIONES AUXILIARES ============
+
+function contieneLenguajeProhibido(texto) {
+  const textoNormalizado = texto.toLowerCase();
+  return PALABRAS_PROHIBIDAS.some(function (palabra) {
+    return textoNormalizado.indexOf(palabra) !== -1;
+  });
+}
+
+function guardarArchivoEnDrive(datos, tipo) {
+  const carpetaPrincipal = DriveApp.getFolderById(CARPETA_PRINCIPAL_ID);
+  const nombreSubcarpeta = tipo === "video" ? "Videos" : tipo === "audio" ? "Audios" : "Tarjetas";
+  const subcarpeta = obtenerOCrearSubcarpeta(carpetaPrincipal, nombreSubcarpeta);
+
+  const mimeType = datos.mimeType || (tipo === "video" ? "video/mp4" : tipo === "audio" ? "audio/webm" : "image/png");
+  const extension = datos.extension || (tipo === "video" ? "mp4" : tipo === "audio" ? "webm" : "png");
+  const nombreArchivo = limpiarNombre(datos.autor) + "_" + Date.now() + "." + extension;
+
+  // El base64 puede venir con el prefijo "data:...;base64,则" -> lo sacamos si está
+  const base64Limpio = datos.archivoBase64.indexOf(",") !== -1
+    ? datos.archivoBase64.split(",").pop()
+    : datos.archivoBase64;
+
+  const bytes = Utilities.base64Decode(base64Limpio);
+  const blob = Utilities.newBlob(bytes, mimeType, nombreArchivo);
+
+  const archivo = subcarpeta.createFile(blob);
+  // IMPORTANTE: ya NO se comparte el archivo públicamente. Queda privado,
+  // visible solo para tu cuenta de Google. El propio script (que corre como
+  // vos) es el único que puede leerlo para mostrarlo en la web.
+  return archivo;
+}
+
+function guardarDisenioEnDrive(datos) {
+  const carpetaPrincipal = DriveApp.getFolderById(CARPETA_PRINCIPAL_ID);
+  // Carpeta aparte, para no mezclar el respaldo visual con las fotos/videos/
+  // audios reales que sí se muestran en la web.
+  const subcarpeta = obtenerOCrearSubcarpeta(carpetaPrincipal, "Diseños (respaldo)");
+
+  const nombreArchivo = limpiarNombre(datos.autor) + "_" + Date.now() + "_diseno.png";
+
+  const base64Limpio = datos.disenioBase64.indexOf(",") !== -1
+    ? datos.disenioBase64.split(",").pop()
+    : datos.disenioBase64;
+
+  const bytes = Utilities.base64Decode(base64Limpio);
+  const blob = Utilities.newBlob(bytes, "image/png", nombreArchivo);
+
+  return subcarpeta.createFile(blob);
+}
+
+function obtenerOCrearSubcarpeta(carpetaPadre, nombre) {
+  const existentes = carpetaPadre.getFoldersByName(nombre);
+  return existentes.hasNext() ? existentes.next() : carpetaPadre.createFolder(nombre);
+}
+
+function limpiarNombre(nombre) {
+  return (nombre || "invitado").replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30);
+}
+
+function obtenerHoja() {
+  const libro = SpreadsheetApp.getActiveSpreadsheet();
+  let hoja = libro.getSheetByName(NOMBRE_HOJA);
+
+  // Si la pestaña "Posts" todavía no existe dentro de tu archivo, se crea sola
+  if (!hoja) {
+    hoja = libro.insertSheet(NOMBRE_HOJA);
+  }
+  if (hoja.getLastRow() === 0) {
+    hoja.appendRow(["fecha", "autor", "relacion", "mensaje", "tipo", "color", "driveFileId", "driveUrl", "disenioFileId", "disenioUrl", "estado"]);
+  }
+  return hoja;
+}
+
+function registrarEnHoja(post) {
+  const hoja = obtenerHoja();
+  hoja.appendRow([
+    new Date(),
+    post.autor,
+    post.relacion,
+    post.mensaje,
+    post.tipo,
+    post.color,
+    post.driveFileId,
+    post.driveUrl,
+    post.disenioFileId,
+    post.disenioUrl,
+    "pendiente"
+  ]);
+  return hoja.getLastRow();
+}
+
+function objetoDesdeFila(encabezados, fila) {
+  const obj = {};
+  encabezados.forEach(function (clave, i) { obj[clave] = fila[i]; });
+  return obj; // incluye driveFileId internamente; datosSegurosParaElCliente lo filtra antes de responder
+}
+
+function respuesta(objeto) {
+  return ContentService
+    .createTextOutput(JSON.stringify(objeto))
+    .setMimeType(ContentService.MimeType.JSON);
+}

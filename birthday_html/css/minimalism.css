@@ -418,7 +418,7 @@ body {
 }
 
 .card-post {
-    background: var(--bg-card);
+    background-color: #E8F1F9; /* Color de respaldo predeterminado */
     border-radius: var(--radius-card);
     padding: 24px;
     border: 1px solid var(--gray-border);
@@ -471,15 +471,19 @@ body {
     width: 100%;
     border-radius: 10px;
     overflow: hidden;
+    margin-top: 12px;
     margin-bottom: 15px;
+    background-color: rgba(0, 0, 0, 0.03); /* Fondo neutro por si quedan franjas laterales */
 }
 
 .post-media img,
 .post-media video {
     width: 100%;
-    max-height: 220px;
-    object-fit: cover;
+    max-width: 100%;
+    max-height: 280px; /* Limita la altura máxima vertical */
+    height: auto;
     display: block;
+    object-fit: contain; /* Muestra la imagen completa adaptada al espacio */
 }
 
 .post-actions {
